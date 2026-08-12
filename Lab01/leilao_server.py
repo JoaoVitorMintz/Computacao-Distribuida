@@ -1,5 +1,6 @@
 # ALUNO: João Vitor Garcia Aguiar Mintz; RA: 10440421
 import socket
+import threading
 
 HOST = "0.0.0.0"
 PORT = 5000
@@ -70,10 +71,13 @@ def main():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind((HOST, PORT))
-    s.listen(1) # Fila pequena para demonstrar o limite
+    conn, addr = s.accept()
+    t = threading.Thread(target=comandos, args=conn)
+    t.start()
+    t.daemon = True
     
-    print(f"Consultas Financeiras (Sem Threads) ouvindo em {PORT}...")
-    print("Aviso: Apenas um cliente por vez será atendido.")
+    print(f"Leilão em Tempo Real ouvindo em {PORT}...")
+    print("Aviso: Permitido múltiplos usuários simultâneos")
 
     while True:
         conn, addr = s.accept()
