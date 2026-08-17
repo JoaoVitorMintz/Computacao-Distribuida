@@ -5,12 +5,15 @@ import threading
 HOST = "0.0.0.0"
 PORT = 5000
 
+MAX_CLIENTS = 5
+
 clientes_conectados = []
 maior_lance = 0.0
 
-def adicionar_cliente(conn):
+def adicionar_cliente(conn, id):
     clientes_conectados.append({ 
-        'CONN': conn, 
+        'CONN': conn,
+        'ID': id,
         'LANCE': 0.0
     })
 
@@ -19,18 +22,22 @@ def alterar_lance(conn, lance):
         if cliente['CONN'] == conn:
             cliente['LANCE'] = lance
 
-def broadcast(maior_atual):
+def broadcast(id, maior_atual):
     for cliente in clientes_conectados:
-        cliente['CONN'].sendall(f"\nNOVO LANCE! Valor de {maior_atual} reais".encode())
+        cliente['CONN'].sendall(f"\nNovo lance, R${maior_atual} por {id}".encode())
 
-def valor_abaixo(conn, maior_atual):
-    conn.sendall(f"\nERRO: Valor abaixo do maior lance atual de {maior_atual} reais".encode())
+def valor_abaixo(conn):
+    conn.sendall(f"\nLANCE RECUSADO: Valor baixo".encode())
 
-def rodar_leilao(conn):
-    global maior_lance # Função global para que possa ser alterada por todas as threads
+def rodar_leilao(conn, id):
+    global maior_lance
 
-    conn.sendall(f"BEM VINDO AO LEILÃO!\nItem atual: Geladeira 2 portas!\n".encode())
-    
+    conn.sendall(
+        f"BEM VINDO AO LEILÃO!\n"
+        f"Você é o Cliente {id}\n"
+        f"Item atual: Geladeira 2 portas!\n".encode()
+    )
+
     while True:
 
         print(f"Maior lance atual de {maior_lance} reais.")
@@ -40,51 +47,63 @@ def rodar_leilao(conn):
         if not dados:
             break
 
-        lance = float(dados.decode())
+        lance_texto = dados.decode().strip()
+
+        if not lance_texto:
+            continue
+
+        lance = float(lance_texto)
+
         lance_aceito = False
 
-        # REGIÃO CRÍTICA:
+        # REGIÃO CRÍTICA
         if lance > maior_lance:
             maior_lance = lance
-            print(f"Lance recebido: {lance} reais!") # Aviso ao servidor
+
+            print(f"Lance recebido: {lance} reais!")
             lance_aceito = True
-            
 
         else:
-            print(f"O lance de {conn} foi abaixo do maior atual!") # Aviso ao servidor
-            valor_abaixo(conn, maior_lance) # Aviso apenas ao cliente que enviou o valor abaixo
+            print(f"O lance do Cliente {id} foi abaixo do maior atual!")
+            valor_abaixo(conn)
 
         # FINAL DA REGIÃO CRÍTICA
         if lance_aceito:
-            broadcast(maior_lance) # Aviso a todos os clientes
             alterar_lance(conn, lance)
+            broadcast(id, maior_lance)
 
+    for cliente in clientes_conectados:
+        if cliente['CONN'] == conn:
+            clientes_conectados.remove(cliente)
+            break
 
     conn.close()
 
 
 def main():
-    # INICIA O SOCKET
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind((HOST, PORT))
-
     s.listen(5)
+
+    num_cliente = 0  
 
     while True:
         conn, addr = s.accept()
 
-        # Cria thread para o cliente que acabou de entrar:
-        adicionar_cliente(conn)
-        print(f"Cliente conectado: {addr}")
+        if len(clientes_conectados) >= MAX_CLIENTS:
+                conn.sendall("Servidor cheio! Máximo de 5 clientes.\n".encode())
+                conn.close()
+                continue
 
-        # Configura para paralelizar o servidor para aceitar mais de um cliente
-        t = threading.Thread(target=rodar_leilao, args=(conn,))
+        adicionar_cliente(conn, num_cliente)
+        print(f"Cliente {num_cliente} conectado: {addr}")
+
+        t = threading.Thread(target=rodar_leilao, args=(conn, num_cliente))
         t.daemon = True
-        t.start()   
-        
-        print(f"Leilão em Tempo Real ouvindo em {PORT}...")
-        print("Aviso: Permitido múltiplos usuários simultâneos")
+        t.start()
+
+        num_cliente += 1
 
 if __name__ == "__main__":
     main()
